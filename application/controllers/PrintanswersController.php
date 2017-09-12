@@ -28,9 +28,11 @@
         * View answers at the end of a survey in one place. To export as pdf, set 'usepdfexport' = 1 in lsconfig.php and $printableexport='pdf'.
         * @param mixed $surveyid
         * @param bool $printableexport
+        * @param int $id show the answers with this id 
+        * @param string $token token for suveys
         * @return
         */
-        function actionView($surveyid,$printableexport=FALSE)
+        function actionView($surveyid, $printableexport=FALSE, $id=NULL, $token=NULL)
         {
             Yii::app()->loadHelper("frontend");
             Yii::import('application.libraries.admin.pdf');
@@ -39,15 +41,7 @@
             $sExportType = $printableexport;
 
             Yii::app()->loadHelper('database');
-
-            if (isset($_SESSION['survey_'.$iSurveyID]['sid']))
-            {
-                $iSurveyID = $_SESSION['survey_'.$iSurveyID]['sid'];
-            }
-            else
-            {
-                //die('Invalid survey/session');
-            }
+            
             // Get the survey inforamtion
             // Set the language for dispay
             if (isset($_SESSION['survey_'.$iSurveyID]['s_lang']))
@@ -73,7 +67,7 @@
 
 
             //Survey is not finished or don't exist
-            if (!isset($_SESSION['survey_'.$iSurveyID]['finished']) || !isset($_SESSION['survey_'.$iSurveyID]['srid']))
+            if ($id==NULL && $token==NULL && (!isset($_SESSION['survey_'.$iSurveyID]['finished']) || !isset($_SESSION['survey_'.$iSurveyID]['srid'])))
             //display "sorry but your session has expired"
             {
                 sendCacheHeaders();
@@ -91,7 +85,7 @@
                 exit;
             }
             //Fin session time out
-            $sSRID = $_SESSION['survey_'.$iSurveyID]['srid']; //I want to see the answers with this id
+
             //Ensure script is not run directly, avoid path disclosure
             //if (!isset($rootdir) || isset($_REQUEST['$rootdir'])) {die( "browse - Cannot run this script directly");}
 
@@ -104,6 +98,35 @@
             //CHECK IF SURVEY IS ACTIVATED AND EXISTS
             $sSurveyName = $aSurveyInfo['surveyls_title'];
             $sAnonymized = $aSurveyInfo['anonymized'];
+            
+            LimeExpressionManager::StartProcessingPage(true);  // means that all variables are on the same page
+            LimeExpressionManager::StartProcessingGroup(1,($aSurveyInfo['anonymized']!="N"),$iSurveyID); // Since all data are loaded, and don't need JavaScript, pretend all from Group 1
+            $printanswershonorsconditions = Yii::app()->getConfig('printanswershonorsconditions');
+            
+            $sSRID = $id;
+            if($token!=NULL) {
+                $aFullResponseTable = getFullResponseTableByToken($iSurveyID,'ivangsa@gmail.com',$sLanguage,$printanswershonorsconditions);
+                $sSRID = $aFullResponseTable['id'][2];
+            } else {
+                if($sSRID==NULL){
+                    $sSRID = $_SESSION['survey_'.$iSurveyID]['srid']; //I want to see the answers with this id
+                }                
+                $aFullResponseTable = getFullResponseTable($iSurveyID,$sSRID,$sLanguage,$printanswershonorsconditions);
+            }
+            traceVar($aFullResponseTable['id'][2]);
+            
+            //Get the fieldmap @TODO: do we need to filter out some fields?
+            if($aSurveyInfo['datestamp']!="Y" || $sAnonymized == 'Y'){
+                unset ($aFullResponseTable['submitdate']);
+            }else{
+                unset ($aFullResponseTable['id']);
+            }
+            unset ($aFullResponseTable['token']);
+            unset ($aFullResponseTable['lastpage']);
+            unset ($aFullResponseTable['startlanguage']);
+            unset ($aFullResponseTable['datestamp']);
+            unset ($aFullResponseTable['startdate']);     
+            
             //OK. IF WE GOT THIS FAR, THEN THE SURVEY EXISTS AND IT IS ACTIVE, SO LETS GET TO WORK.
             //SHOW HEADER
              if($sExportType == 'pdf')
@@ -119,22 +142,6 @@
                 $sDefaultHeaderString = $sSurveyName." (".gT("ID",'unescaped').":".$iSurveyID.")";
                 $oPDF->initAnswerPDF($aSurveyInfo, $aPdfLanguageSettings, Yii::app()->getConfig('sitename'), $sSurveyName, $sDefaultHeaderString);
 
-                LimeExpressionManager::StartProcessingPage(true);  // means that all variables are on the same page
-                // Since all data are loaded, and don't need JavaScript, pretend all from Group 1
-                LimeExpressionManager::StartProcessingGroup(1,($aSurveyInfo['anonymized']!="N"),$iSurveyID);
-                $printanswershonorsconditions = Yii::app()->getConfig('printanswershonorsconditions');
-                $aFullResponseTable = getFullResponseTable($iSurveyID,$sSRID,$sLanguage,$printanswershonorsconditions);
-                //Get the fieldmap @TODO: do we need to filter out some fields?
-                if($aSurveyInfo['datestamp']!="Y" || $sAnonymized == 'Y'){
-                    unset ($aFullResponseTable['submitdate']);
-                }else{
-                    unset ($aFullResponseTable['id']);
-                }
-                unset ($aFullResponseTable['token']);
-                unset ($aFullResponseTable['lastpage']);
-                unset ($aFullResponseTable['startlanguage']);
-                unset ($aFullResponseTable['datestamp']);
-                unset ($aFullResponseTable['startdate']);
                 foreach ($aFullResponseTable as $sFieldname=>$fname)
                 {
                     if (substr($sFieldname,0,4) == 'gid_')
@@ -160,101 +167,66 @@
                 $oPDF->Output($sExportFileName."-".$iSurveyID.".pdf","D");
             }
             elseif($sExportType == 'csv') {
+                
+//                viewHelper::disableHtmlLogging();
+        foreach (App()->log->routes as $route)
+        {
+            $route->enabled = $route->enabled && !($route instanceOf CWebLogRoute);
+        }
 
-                LimeExpressionManager::StartProcessingPage(true);  // means that all variables are on the same page
-                // Since all data are loaded, and don't need JavaScript, pretend all from Group 1
-                LimeExpressionManager::StartProcessingGroup(1,($aSurveyInfo['anonymized']!="N"),$iSurveyID);
-                $printanswershonorsconditions = Yii::app()->getConfig('printanswershonorsconditions');
-                $aFullResponseTable = getFullResponseTable($iSurveyID,$sSRID,$sLanguage,$printanswershonorsconditions);
-                //Get the fieldmap @TODO: do we need to filter out some fields?
-                if($aSurveyInfo['datestamp']!="Y" || $sAnonymized == 'Y'){
-                    unset ($aFullResponseTable['submitdate']);
-                }else{
-                    unset ($aFullResponseTable['id']);
-                }
-                unset ($aFullResponseTable['token']);
-                unset ($aFullResponseTable['lastpage']);
-                unset ($aFullResponseTable['startlanguage']);
-                unset ($aFullResponseTable['datestamp']);
-                unset ($aFullResponseTable['startdate']);
-
-                $values = array();
+                $csvOut = '';
+                $csvOut .= gT("Survey name (ID):")." ". $sSurveyName ." (".$iSurveyID.")\n";
                 foreach ($aFullResponseTable as $sFieldname=>$fname)
                 {
-
                     if (substr($sFieldname,0,4) == 'gid_')
                     {
-                        $csv_row = array();
-                        array_push($values, $csv_row);
-                        array_push($csv_row, $fname[0]);
-
-                        $csv_row = array();
-                        array_push($values, $csv_row);
-                        array_push($csv_row, $fname[1]);
+                        $csvOut .= CSVEscape($fname[0])."\n";
+                        $csvOut .= CSVEscape($fname[1])."\n";
                     }
                     elseif ($sFieldname=='submitdate')
                     {
                         if($sAnonymized != 'Y')
                         {
-                            $csv_row = array();
-                            array_push($values, $csv_row);
-                            array_push($csv_row, $fname[0]." ".$fname[1]);
-                            array_merge($csv_row, $fname[3]);
+                            $csvOut .= "{$fname[0]} {$fname[1]},". $this->joinResponses($fname[3], ',')."\n";
                         }
                     }
                     elseif (substr($sFieldname,0,4) == 'qid_') // Question text is a subquestion
                     {
-                        $csv_row = array();
-                        array_push($values, $csv_row);
-                        array_push($csv_row, $fname[0]);
+                        $csvOut .= "$fname[0]}\n";
                     }
                     else {
                         if($fname[1] != '') {
-                            $csv_row = array();
-                            array_push($values, $csv_row);
-                            array_push($csv_row, $fname[1]);
-                            array_merge($csv_row, $fname[3]);
+                            $csvOut .= CSVEscape($fname[1]).",".$this->joinResponses($fname[3], ',')."\n";
                         } else {
-                            $csv_row = array();
-                            array_push($values, $csv_row);
-                            array_push($csv_row, $fname[0]);
-                            array_merge($csv_row, $fname[3]);
+                            $csvOut .= CSVEscape($fname[0]).",".$this->joinResponses($fname[3], ',')."\n";
                         }
                     }
                 }
 
-                $csvWriter = new CsvWriter();
-                $fOptions = new FormattingOptions();
-                $fOptions->output = "display";
-                $csvWriter->init($aSurveyInfo,$sLanguage, $fOptions);
-                $csvWriter->write($aSurveyInfo, $sLanguage, $fOptions);
+                
+                traceVar($csvOut);
+                
+                $sExportFileName = sanitize_filename($sSurveyName);
+                
+                
+                header("Pragma: public");
+                header("Cache-Control: must-revalidate, post-check=0, pre-check=0");
+                header("Content-Disposition: attachment; filename=" . $sExportFileName."-".$iSurveyID.".csv");
+                header("Content-type: text/comma-separated-values; charset=UTF-8");                
+                
+                echo $csvOut;
+                ob_flush();
             }
             else {
-                $sOutput = "<div style='text-align: center;'>";
-                $sOutput .= CHtml::form(array("printanswers/view/surveyid/{$iSurveyID}/printableexport/pdf"), 'post', array("style"=>"display: inline-block;"))
+                $sOutput = "<div style='text-align: center;margin-bottom: 5px;'>";
+                $sOutput .= CHtml::form(array("printanswers/view/surveyid/{$iSurveyID}/printableexport/pdf/id/{$sSRID}"), 'post', array("style"=>"display: inline-block;"))
                     ."<center><input class='btn btn-default' type='submit' value='".gT("PDF export")."'id=\"exportbutton\"/><input type='hidden' name='printableexport' /></center></form>";
                 $sOutput .= "&nbsp;&nbsp;";
-                $sOutput .= CHtml::form(array("printanswers/view/surveyid/{$iSurveyID}/printableexport/csv"), 'post', array("style"=>"display: inline-block;"))
-                    ."<center><input class='btn btn-default' type='submit' value='".gT("CSV export")."'id=\"exportbutton\"/><input type='hidden' name='printableexport' /></center></form>";
+                $sOutput .= CHtml::form(array("printanswers/view/surveyid/{$iSurveyID}/printableexport/csv/id/{$sSRID}"), 'post', array("style"=>"display: inline-block;"))
+                    ."<center><input class='btn btn-default' type='submit' value='".gT("Exportar a CSV")."'id=\"exportbutton\"/><input type='hidden' name='printableexport' /></center></form>";
                 $sOutput .= "</div>";
 
                 $sOutput .= "\t<div class='printouttitle'><strong>".gT("Survey name (ID):")."</strong> $sSurveyName ($iSurveyID)</div><p>&nbsp;\n";
-                LimeExpressionManager::StartProcessingPage(true);  // means that all variables are on the same page
-                // Since all data are loaded, and don't need JavaScript, pretend all from Group 1
-                LimeExpressionManager::StartProcessingGroup(1,($aSurveyInfo['anonymized']!="N"),$iSurveyID);
-                $printanswershonorsconditions = Yii::app()->getConfig('printanswershonorsconditions');
-                $aFullResponseTable = getFullResponseTable($iSurveyID,$sSRID,$sLanguage,$printanswershonorsconditions);
-                //Get the fieldmap @TODO: do we need to filter out some fields?
-                if($aSurveyInfo['datestamp']!="Y" || $sAnonymized == 'Y'){
-                    unset ($aFullResponseTable['submitdate']);
-                }else{
-                    unset ($aFullResponseTable['id']);
-                }
-                unset ($aFullResponseTable['token']);
-                unset ($aFullResponseTable['lastpage']);
-                unset ($aFullResponseTable['startlanguage']);
-                unset ($aFullResponseTable['datestamp']);
-                unset ($aFullResponseTable['startdate']);
                 $sOutput .= "<table class='printouttable' >\n";
                 foreach ($aFullResponseTable as $sFieldname=>$fname)
                 {
@@ -310,12 +282,12 @@
          * @param $expresion
          * @param $array
          */
-        function joinResponses($values){
+        function joinResponses($values, $glue="</td><td class='printanswersanswertext'>"){
 //            traceVar($values);
             foreach ($values as $i=>$value) {
                 $values[$i] = flattenText($value);
             }
-            return join("</td><td class='printanswersanswertext'>", $values);
+            return join($glue, $values);
         }
 
     }

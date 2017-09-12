@@ -537,6 +537,7 @@ function submittokens($quotaexit=false)
                 // added survey url in replacement vars
                 $surveylink = Yii::app()->createAbsoluteUrl("/survey/index/sid/{$surveyid}",array('lang'=>$_SESSION['survey_'.$surveyid]['s_lang'],'token'=>$token->token));
                 $aReplacementVars['SURVEYURL'] = $surveylink;
+                $aReplacementVars['VIEWRESPONSEURL']=Yii::app()->createAbsoluteUrl("/printanswers/view/surveyid/{$surveyid}/id/{$_SESSION['survey_'.$surveyid]['srid']}");
 
                 $attrfieldnames=getAttributeFieldNames($surveyid);
                 foreach ($attrfieldnames as $attr_name)

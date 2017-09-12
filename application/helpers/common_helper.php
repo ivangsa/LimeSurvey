@@ -4143,6 +4143,18 @@ function getQuotaCompletedCount($iSurveyId, $quotaid)
 }
 
 /**
+ * 
+ * @param type $iSurveyID
+ * @param type $token
+ * @param type $sLanguageCode
+ * @param type $bHonorConditions
+ */
+function getFullResponseTableByToken($iSurveyID, $token, $sLanguageCode, $bHonorConditions=true) {
+    $idrow = SurveyDynamic::model($iSurveyID)->findByAttributes(array('token'=>$token));
+    return getFullResponseTable($iSurveyID, $idrow['id'], $sLanguageCode, $bHonorConditions);
+}
+
+/**
 * Creates an array with details on a response (and all previews responses for a particular token, index 3) for display purposes
 * Used in Print answers, Detailed response view and Detailed admin notification email
 *
