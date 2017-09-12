@@ -106,67 +106,7 @@
             $sAnonymized = $aSurveyInfo['anonymized'];
             //OK. IF WE GOT THIS FAR, THEN THE SURVEY EXISTS AND IT IS ACTIVE, SO LETS GET TO WORK.
             //SHOW HEADER
-            if ($sExportType != 'pdf')
-            {
-                $sOutput = CHtml::form(array("printanswers/view/surveyid/{$iSurveyID}/printableexport/pdf"), 'post')
-                ."<center><input class='btn btn-default' type='submit' value='".gT("PDF export")."'id=\"exportbutton\"/><input type='hidden' name='printableexport' /></center></form>";
-                $sOutput .= "\t<div class='printouttitle'><strong>".gT("Survey name (ID):")."</strong> $sSurveyName ($iSurveyID)</div><p>&nbsp;\n";
-                LimeExpressionManager::StartProcessingPage(true);  // means that all variables are on the same page
-                // Since all data are loaded, and don't need JavaScript, pretend all from Group 1
-                LimeExpressionManager::StartProcessingGroup(1,($aSurveyInfo['anonymized']!="N"),$iSurveyID);
-                $printanswershonorsconditions = Yii::app()->getConfig('printanswershonorsconditions');
-                $aFullResponseTable = getFullResponseTable($iSurveyID,$sSRID,$sLanguage,$printanswershonorsconditions);
-                //Get the fieldmap @TODO: do we need to filter out some fields?
-                if($aSurveyInfo['datestamp']!="Y" || $sAnonymized == 'Y'){
-                    unset ($aFullResponseTable['submitdate']);
-                }else{
-                    unset ($aFullResponseTable['id']);
-                }
-                unset ($aFullResponseTable['token']);
-                unset ($aFullResponseTable['lastpage']);
-                unset ($aFullResponseTable['startlanguage']);
-                unset ($aFullResponseTable['datestamp']);
-                unset ($aFullResponseTable['startdate']);
-                $sOutput .= "<table class='printouttable' >\n";
-                foreach ($aFullResponseTable as $sFieldname=>$fname)
-                {
-                    if (substr($sFieldname,0,4) == 'gid_')
-                    {
-                            $sOutput .= "\t<tr class='printanswersgroup'><td colspan='2'>{$fname[0]}</td></tr>\n";
-                            $sOutput .= "\t<tr class='printanswersgroupdesc'><td colspan='2'>{$fname[1]}</td></tr>\n";
-                    }
-                    elseif ($sFieldname=='submitdate')
-                    {
-                        if($sAnonymized != 'Y')
-                        {
-                                $sOutput .= "\t<tr class='printanswersquestion'><td>{$fname[0]} {$fname[1]}</td><td class='printanswersanswertext'>{$fname[2]}</td></tr>";
-                        }
-                    }
-                    elseif (substr($sFieldname,0,4) != 'qid_') // Question text is already in subquestion text, skipping it
-                    {
-                        $sOutput .= "\t<tr class='printanswersquestion'><td>{$fname[0]} {$fname[1]}</td><td class='printanswersanswertext'>".flattenText($fname[2])."</td></tr>";
-                    }
-                }
-                $sOutput .= "</table>\n";
-                $sData['thissurvey']=$aSurveyInfo;
-                $sOutput=templatereplace($sOutput, array() , $sData, '', $aSurveyInfo['anonymized']=="Y",NULL, array(), true);// Do a static replacement
-                ob_start(function($buffer, $phase) {
-                    App()->getClientScript()->render($buffer);
-                    App()->getClientScript()->reset();
-                    return $buffer;
-                });
-                ob_implicit_flush(false);
-
-                sendCacheHeaders();
-                doHeader();
-                echo templatereplace(file_get_contents($oTemplate->viewPath.'/startpage.pstpl'),array(),$sData);
-                echo templatereplace(file_get_contents($oTemplate->viewPath.'/printanswers.pstpl'),array('ANSWERTABLE'=>$sOutput),$sData);
-                echo templatereplace(file_get_contents($oTemplate->viewPath.'/endpage.pstpl'),array(),$sData);
-                echo "</body></html>";
-
-                ob_flush();
-            }
-            if($sExportType == 'pdf')
+             if($sExportType == 'pdf')
             {
                 // Get images for TCPDF from template directory
                 define('K_PATH_IMAGES', getTemplatePath($aSurveyInfo['template']).DIRECTORY_SEPARATOR);
@@ -219,8 +159,163 @@
                 $sExportFileName = sanitize_filename($sSurveyName);
                 $oPDF->Output($sExportFileName."-".$iSurveyID.".pdf","D");
             }
+            elseif($sExportType == 'csv') {
+
+                LimeExpressionManager::StartProcessingPage(true);  // means that all variables are on the same page
+                // Since all data are loaded, and don't need JavaScript, pretend all from Group 1
+                LimeExpressionManager::StartProcessingGroup(1,($aSurveyInfo['anonymized']!="N"),$iSurveyID);
+                $printanswershonorsconditions = Yii::app()->getConfig('printanswershonorsconditions');
+                $aFullResponseTable = getFullResponseTable($iSurveyID,$sSRID,$sLanguage,$printanswershonorsconditions);
+                //Get the fieldmap @TODO: do we need to filter out some fields?
+                if($aSurveyInfo['datestamp']!="Y" || $sAnonymized == 'Y'){
+                    unset ($aFullResponseTable['submitdate']);
+                }else{
+                    unset ($aFullResponseTable['id']);
+                }
+                unset ($aFullResponseTable['token']);
+                unset ($aFullResponseTable['lastpage']);
+                unset ($aFullResponseTable['startlanguage']);
+                unset ($aFullResponseTable['datestamp']);
+                unset ($aFullResponseTable['startdate']);
+
+                $values = array();
+                foreach ($aFullResponseTable as $sFieldname=>$fname)
+                {
+
+                    if (substr($sFieldname,0,4) == 'gid_')
+                    {
+                        $csv_row = array();
+                        array_push($values, $csv_row);
+                        array_push($csv_row, $fname[0]);
+
+                        $csv_row = array();
+                        array_push($values, $csv_row);
+                        array_push($csv_row, $fname[1]);
+                    }
+                    elseif ($sFieldname=='submitdate')
+                    {
+                        if($sAnonymized != 'Y')
+                        {
+                            $csv_row = array();
+                            array_push($values, $csv_row);
+                            array_push($csv_row, $fname[0]." ".$fname[1]);
+                            array_merge($csv_row, $fname[3]);
+                        }
+                    }
+                    elseif (substr($sFieldname,0,4) == 'qid_') // Question text is a subquestion
+                    {
+                        $csv_row = array();
+                        array_push($values, $csv_row);
+                        array_push($csv_row, $fname[0]);
+                    }
+                    else {
+                        if($fname[1] != '') {
+                            $csv_row = array();
+                            array_push($values, $csv_row);
+                            array_push($csv_row, $fname[1]);
+                            array_merge($csv_row, $fname[3]);
+                        } else {
+                            $csv_row = array();
+                            array_push($values, $csv_row);
+                            array_push($csv_row, $fname[0]);
+                            array_merge($csv_row, $fname[3]);
+                        }
+                    }
+                }
+
+                $csvWriter = new CsvWriter();
+                $fOptions = new FormattingOptions();
+                $fOptions->output = "display";
+                $csvWriter->init($aSurveyInfo,$sLanguage, $fOptions);
+                $csvWriter->write($aSurveyInfo, $sLanguage, $fOptions);
+            }
+            else {
+                $sOutput = "<div style='text-align: center;'>";
+                $sOutput .= CHtml::form(array("printanswers/view/surveyid/{$iSurveyID}/printableexport/pdf"), 'post', array("style"=>"display: inline-block;"))
+                    ."<center><input class='btn btn-default' type='submit' value='".gT("PDF export")."'id=\"exportbutton\"/><input type='hidden' name='printableexport' /></center></form>";
+                $sOutput .= "&nbsp;&nbsp;";
+                $sOutput .= CHtml::form(array("printanswers/view/surveyid/{$iSurveyID}/printableexport/csv"), 'post', array("style"=>"display: inline-block;"))
+                    ."<center><input class='btn btn-default' type='submit' value='".gT("CSV export")."'id=\"exportbutton\"/><input type='hidden' name='printableexport' /></center></form>";
+                $sOutput .= "</div>";
+
+                $sOutput .= "\t<div class='printouttitle'><strong>".gT("Survey name (ID):")."</strong> $sSurveyName ($iSurveyID)</div><p>&nbsp;\n";
+                LimeExpressionManager::StartProcessingPage(true);  // means that all variables are on the same page
+                // Since all data are loaded, and don't need JavaScript, pretend all from Group 1
+                LimeExpressionManager::StartProcessingGroup(1,($aSurveyInfo['anonymized']!="N"),$iSurveyID);
+                $printanswershonorsconditions = Yii::app()->getConfig('printanswershonorsconditions');
+                $aFullResponseTable = getFullResponseTable($iSurveyID,$sSRID,$sLanguage,$printanswershonorsconditions);
+                //Get the fieldmap @TODO: do we need to filter out some fields?
+                if($aSurveyInfo['datestamp']!="Y" || $sAnonymized == 'Y'){
+                    unset ($aFullResponseTable['submitdate']);
+                }else{
+                    unset ($aFullResponseTable['id']);
+                }
+                unset ($aFullResponseTable['token']);
+                unset ($aFullResponseTable['lastpage']);
+                unset ($aFullResponseTable['startlanguage']);
+                unset ($aFullResponseTable['datestamp']);
+                unset ($aFullResponseTable['startdate']);
+                $sOutput .= "<table class='printouttable' >\n";
+                foreach ($aFullResponseTable as $sFieldname=>$fname)
+                {
+                    if (substr($sFieldname,0,4) == 'gid_')
+                    {
+                        $sOutput .= "\t<tr class='printanswersgroup'><td colspan='10'>{$fname[0]}</td></tr>\n";
+                        $sOutput .= "\t<tr class='printanswersgroupdesc'><td colspan='10'>{$fname[1]}</td></tr>\n";
+                    }
+                    elseif ($sFieldname=='submitdate')
+                    {
+                        if($sAnonymized != 'Y')
+                        {
+                            $sOutput .= "\t<tr class='printanswersquestion'><td>{$fname[0]} {$fname[1]}</td><td class='printanswersanswertext'>". $this->joinResponses($fname[3])."</td></tr>";
+                        }
+                    }
+                    elseif (substr($sFieldname,0,4) == 'qid_') // Question text is a subquestion
+                    {
+                        $sOutput .= "\t<tr class='printanswersquestion'><td colspan='10'>{$fname[0]}</td></tr>";
+                    }
+                    else {
+                        if($fname[1] != '') {
+                            $sOutput .= "\t<tr class='printanswersquestion'><td>{$fname[1]}</td><td class='printanswersanswertext'>".$this->joinResponses($fname[3])."</td></tr>";
+                        } else {
+                            $sOutput .= "\t<tr class='printanswersquestion'><td>{$fname[0]}</td><td class='printanswersanswertext'>".$this->joinResponses($fname[3])."</td></tr>";
+                        }
+                    }
+                }
+                $sOutput .= "</table>\n";
+                $sData['thissurvey']=$aSurveyInfo;
+                $sOutput=templatereplace($sOutput, array() , $sData, '', $aSurveyInfo['anonymized']=="Y",NULL, array(), true);// Do a static replacement
+                ob_start(function($buffer, $phase) {
+                    App()->getClientScript()->render($buffer);
+                    App()->getClientScript()->reset();
+                    return $buffer;
+                });
+                ob_implicit_flush(false);
+
+                sendCacheHeaders();
+                doHeader();
+                echo templatereplace(file_get_contents($oTemplate->viewPath.'/startpage.pstpl'),array(),$sData);
+                echo templatereplace(file_get_contents($oTemplate->viewPath.'/printanswers.pstpl'),array('ANSWERTABLE'=>$sOutput),$sData);
+                echo templatereplace(file_get_contents($oTemplate->viewPath.'/endpage.pstpl'),array(),$sData);
+                echo "</body></html>";
+
+                ob_flush();
+            }
 
             LimeExpressionManager::FinishProcessingGroup();
             LimeExpressionManager::FinishProcessingPage();
         }
+
+        /**
+         * @param $expresion
+         * @param $array
+         */
+        function joinResponses($values){
+//            traceVar($values);
+            foreach ($values as $i=>$value) {
+                $values[$i] = flattenText($value);
+            }
+            return join("</td><td class='printanswersanswertext'>", $values);
+        }
+
     }

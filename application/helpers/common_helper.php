@@ -4143,7 +4143,7 @@ function getQuotaCompletedCount($iSurveyId, $quotaid)
 }
 
 /**
-* Creates an array with details on a particular response for display purposes
+* Creates an array with details on a response (and all previews responses for a particular token, index 3) for display purposes
 * Used in Print answers, Detailed response view and Detailed admin notification email
 *
 * @param mixed $iSurveyID
@@ -4157,6 +4157,7 @@ function getFullResponseTable($iSurveyID, $iResponseID, $sLanguageCode, $bHonorC
 
     //Get response data
     $idrow = SurveyDynamic::model($iSurveyID)->findByAttributes(array('id'=>$iResponseID));
+    $idrows = SurveyDynamic::model($iSurveyID)->findAllByAttributes(array('token' => $idrow['token']), array('order' => 'submitdate'));
 
     // Create array of non-null values - those are the relevant ones
     $aRelevantFields = array();
@@ -4182,6 +4183,7 @@ function getFullResponseTable($iSurveyID, $iResponseID, $sLanguageCode, $bHonorC
                 continue;
             }
         }
+
         $question = $fname['question'];
         $subquestion='';
         if (isset($fname['gid']) && !empty($fname['gid'])) {
@@ -4196,40 +4198,103 @@ function getFullResponseTable($iSurveyID, $iResponseID, $sLanguageCode, $bHonorC
         }
         if (!empty($fname['qid']))
         {
-            if ($oldqid !== $fname['qid'])
-            {
-                $oldqid = $fname['qid'];
+//            if ($oldqid !== $fname['qid'])
+//            {
+
                 if (isset($fname['subquestion']) || isset($fname['subquestion1']) || isset($fname['subquestion2']))
                 {
+
                     $aResultTable['qid_'.$fname['sid'].'X'.$fname['gid'].'X'.$fname['qid']]=array($fname['question'],'','');
+
+                    if (isset($fname['subquestion']))
+                        $subquestion = "{$fname['subquestion']}";
+
+                    if (isset($fname['subquestion1']))
+                        $subquestion = "{$fname['subquestion1']}";
+
+                    if (isset($fname['subquestion2']))
+                        $subquestion .= "{$fname['subquestion2']}";
                 }
-                else
-                {
-                    $answer = getExtendedAnswer($iSurveyID,$fname['fieldname'], $idrow[$fname['fieldname']],$sLanguageCode);
-                    $aResultTable[$fname['fieldname']]=array($question,'',$answer);
-                    continue;
-                }
-            }
+//            }
+//            $oldqid = $fname['qid'];
         }
-        else
-        {
-            $answer=getExtendedAnswer($iSurveyID,$fname['fieldname'], $idrow[$fname['fieldname']],$sLanguageCode);
-            $aResultTable[$fname['fieldname']]=array($question,'',$answer);
+
+        if($fname['type'] == '*' and strpos($question, '<table') !== FALSE){
+            $answers = getExtendedAnswers($iSurveyID,$fname['fieldname'], $idrows, $sLanguageCode);
+            $rows = parseHtmlTable($question, $answers);
+            foreach ($rows as $i=>$row){
+                $aResultTable[$fname['fieldname']."_".$i]=array($row[0],$row[0],$row[1],array_slice($row, 1));
+                //traceVar($aResultTable[$fname['fieldname']."_".$i]);
+            }
+        } else {
+            $answer = getExtendedAnswer($iSurveyID,$fname['fieldname'], $idrow[$fname['fieldname']],$sLanguageCode);
+            $answers = getExtendedAnswers($iSurveyID,$fname['fieldname'], $idrows, $sLanguageCode);
+            $aResultTable[$fname['fieldname']]=array($question,$subquestion,$answer,$answers);
+        }
+    }
+    //traceVar($aResultTable);
+    return $aResultTable;
+}
+
+/**
+ * @param integer $iSurveyID The Survey ID
+ * @param string $sFieldCode Field code of the particular field
+ * @param string $idrows All responses rows
+ * @param string $sLanguage Initialized limesurvey_lang object for the resulting response data
+ * @return string
+ */
+function getExtendedAnswers($iSurveyID, $sFieldCode, $idrows, $sLanguageCode) {
+    $answers=array();
+    foreach ($idrows as $id=>$row)
+    {
+        if($row['submitdate'] == null) {
             continue;
         }
-        if (isset($fname['subquestion']))
-            $subquestion = "[{$fname['subquestion']}]";
-
-        if (isset($fname['subquestion1']))
-            $subquestion = "[{$fname['subquestion1']}]";
-
-        if (isset($fname['subquestion2']))
-            $subquestion .= "[{$fname['subquestion2']}]";
-
-        $answer = getExtendedAnswer($iSurveyID,$fname['fieldname'], $idrow[$fname['fieldname']],$sLanguageCode);
-        $aResultTable[$fname['fieldname']]=array($question,$subquestion,$answer);
+        //traceVar($row);
+        $answer = getExtendedAnswer($iSurveyID, $sFieldCode, $row[$sFieldCode],$sLanguageCode);
+        array_push($answers, $answer);
     }
-    return $aResultTable;
+//    traceVar($sFieldCode);
+//    traceVar($answers);
+    return $answers;
+}
+
+/**
+ * @param $question
+ * @return array
+ */
+function parseHtmlTable($question, $answers){
+
+    $dom = new domDocument;
+    $dom->loadHTML($question);
+    $dom->preserveWhiteSpace = false;
+
+    $tables = $dom->getElementsByTagName('table');
+    $trs = $tables->item(0)->getElementsByTagName('tr');
+
+    $rows = array();
+    $pattern = "";
+    foreach($trs as $i=>$tr){
+        foreach($tr->childNodes as $td) {
+            if($td->nodeName == "td" or $td->nodeName == "th") {
+                array_push($rows, array($td->nodeValue));
+                $pattern .=  preg_replace('([\\\\\\^\\$\\.\\[\\]\\|\\(\\)\\?\\*\\+\\{\\}?])', '\\\\$0',$td->nodeValue) . "\s*([0-9]+)\s*";
+                break;
+            }
+        }
+    }
+
+    foreach ($answers as $answer) {
+        preg_match("/" . $pattern . "/", $answer, $matches);
+        $matches = array_slice($matches, 1);
+        foreach ($matches as $i=>$match) {
+            array_push($rows[$i], $match);
+        }
+    }
+
+
+    //traceVar($rows);
+    return $rows;
 }
 
 /**
